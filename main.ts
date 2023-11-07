@@ -88,6 +88,6 @@ for (let row = 0; row < canvas.height; row++) {
 // Wait, until any key is pressed. Not just enter
 await Deno.stdin.read(new Uint8Array(1));
 
-console.log("\x1b[?1049l[1F");
+console.log("\x1b[?1049l\x1b[1F");
 await zoom.in();
 Deno.exit(0);
