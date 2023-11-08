@@ -16,3 +16,7 @@ this is a project I made just for fun, which allows you to view images in the te
 ![Step 5](doc/5.png)
 ![Step 6](doc/6.png)
 ![Step 7](doc/7.png)
+
+## Compiling
+- Install [Deno](https://deno.land/)
+- Run `deno compile -o img.exe -A main.ts` in the project directory
