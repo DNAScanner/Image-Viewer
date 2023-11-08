@@ -46,13 +46,14 @@ interface RGB {
 	blue: number;
 }
 
-title.set(relativeName);
 await zoom.out();
 
 const displayDimensions = {
 	height: Math.floor(Deno.consoleSize().rows * 0.99),
 	width: Math.floor(Deno.consoleSize().columns / 2),
 };
+
+title.set(`${relativeName} @ ${displayDimensions.width}x${displayDimensions.height}px`);
 
 const image = await loadImage(filename);
 
@@ -70,7 +71,7 @@ const offsetX = Math.floor((displayDimensions.width - canvas.width) / 2);
 
 ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-console.log("\x1b[?1049h");
+console.log("\x1b[?1049h\x1b[1G\x1b\x1b[1d");
 
 for (let row = 0; row < canvas.height; row++) {
 	let string = "";
