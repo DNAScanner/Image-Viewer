@@ -37,7 +37,7 @@ const zoom = {
 let relativeName = filename.replaceAll("\\", "/");
 
 // If the file doesnt include data:image, split the last part of the path
-if (!relativeName.includes("data:image")) relativeName = relativeName.split("/").pop() || "";
+if (!relativeName.includes("data:image")) relativeName = relativeName.split("/").pop()?.split("?")[0] || "";
 else relativeName = "Image";
 
 interface RGB {
