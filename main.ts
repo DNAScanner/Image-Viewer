@@ -22,12 +22,12 @@ type RGB = {
 	blue: number;
 };
 
-interface DisplayImageParams {
+type DisplayImageParams = {
 	imageData: Uint8ClampedArray;
 	offsetX: number;
 	width: number;
 	height: number;
-}
+};
 
 const rgbBlock = ({red, green, blue}: RGB) => `\x1b[48;2;${red};${green};${blue}m  \x1b[0m`;
 
