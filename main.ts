@@ -15,12 +15,21 @@ if (!filename.includes("http") && !filename.includes("data:image")) {
 		Deno.exit(1);
 	}
 }
-const rgbBlock = ({red, green, blue}: RGB) => `\x1b[48;2;${red};${green};${blue}m  \x1b[0m`;
 
-const title = {
-	get: async () => new TextDecoder().decode((await new Deno.Command("powershell", {args: ["-Command", "$host.ui.RawUI.WindowTitle"]}).output()).stdout).trim(),
-	set: (title: string) => console.log("\x1b]0;" + title + "\x07"),
+type RGB = {
+	red: number;
+	green: number;
+	blue: number;
 };
+
+interface DisplayImageParams {
+	imageData: Uint8ClampedArray;
+	offsetX: number;
+	width: number;
+	height: number;
+}
+
+const rgbBlock = ({red, green, blue}: RGB) => `\x1b[48;2;${red};${green};${blue}m  \x1b[0m`;
 
 const zoom = {
 	out: async () => {
@@ -34,19 +43,41 @@ const zoom = {
 	},
 };
 
+const display = {
+	init: async () => {
+		console.log("\x1b[?1049h\x1b[1G\x1b\x1b[1d");
+		await zoom.out();
+	},
+	end: async () => {
+		console.log("\x1b[?1049l\x1b[1F");
+		await zoom.in();
+	},
+	show: ({imageData, offsetX, width, height}: DisplayImageParams) => {
+		let string = "\x1b[1G\x1b\x1b[1d";
+		for (let row = 0; row < height; row++) {
+			string += `[${offsetX * 2}G`;
+			for (let column = 0; column < width; column++) {
+				const index = (row * width + column) * 4;
+				const pixel = [imageData[index], imageData[index + 1], imageData[index + 2]];
+				string += rgbBlock({red: pixel[0], green: pixel[1], blue: pixel[2]});
+			}
+			string += "\n";
+		}
+		console.log(string);
+	},
+};
+
+const title = {
+	get: async () => new TextDecoder().decode((await new Deno.Command("powershell", {args: ["-Command", "$host.ui.RawUI.WindowTitle"]}).output()).stdout).trim(),
+	set: (title: string) => console.log("\x1b]0;" + title + "\x07"),
+};
+
 let relativeName = filename.replaceAll("\\", "/");
 
-// If the file doesnt include data:image, split the last part of the path
 if (!relativeName.includes("data:image")) relativeName = relativeName.split("/").pop()?.split("?")[0] || "";
 else relativeName = "Image";
 
-interface RGB {
-	red: number;
-	green: number;
-	blue: number;
-}
-
-await zoom.out();
+await display.init();
 
 const displayDimensions = {
 	height: Math.floor(Deno.consoleSize().rows * 0.99),
@@ -57,7 +88,6 @@ title.set(`${relativeName} @ ${displayDimensions.width}x${displayDimensions.heig
 
 const image = await loadImage(filename);
 
-// Calculate the scale for the image
 const scaleWidth = displayDimensions.width / image.width();
 const scaleHeight = displayDimensions.height / image.height();
 const scale = Math.min(scaleWidth, scaleHeight);
@@ -65,30 +95,33 @@ const scale = Math.min(scaleWidth, scaleHeight);
 const canvas = createCanvas(Math.floor(image.width() * scale), Math.floor(image.height() * scale));
 const ctx = canvas.getContext("2d");
 
-// Calculate the offset for centering the image
 const offsetX = Math.floor((displayDimensions.width - canvas.width) / 2);
-// const offsetY = Math.floor((displayDimensions.height - canvas.height) / 2);
 
 ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-console.log("\x1b[?1049h\x1b[1G\x1b\x1b[1d");
+const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+const data = imageData.data;
 
-for (let row = 0; row < canvas.height; row++) {
-	let string = "";
-	for (let column = 0; column < canvas.width; column++) {
-		const data = ctx.getImageData(column, row, 1, 1);
-		if (data) {
-			const pixel = data.data;
-			string += rgbBlock({red: pixel[0], green: pixel[1], blue: pixel[2]});
-		}
+display.show({imageData: data, offsetX, width: canvas.width, height: canvas.height});
+
+let wait = true;
+const stdin = Deno.stdin;
+stdin.setRaw(true, {cbreak: Deno.build.os !== "windows"});
+
+const maxBuffer = new Uint8Array(1024);
+const read = async () => {
+	const size = await stdin.read(maxBuffer);
+	const buffer = maxBuffer.subarray(0, size || 0);
+
+	for (const _byte of buffer) {
+		wait = false;
 	}
 
-	console.log("  ".repeat(offsetX) + string);
-}
+	setTimeout(read, 1000 / 60);
+};
+await read();
 
-// Wait, until any key is pressed. Not just enter
-await Deno.stdin.read(new Uint8Array(1));
+while (wait) await new Promise((resolve) => setTimeout(resolve, 100));
 
-console.log("\x1b[?1049l\x1b[1F");
-await zoom.in();
+await display.end();
 Deno.exit(0);

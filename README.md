@@ -6,7 +6,7 @@ this is a project I made just for fun, which allows you to view images in the te
 - I recommend using Windows-Terminal
 - In Windows-Terminal, in order to get the automatic zoom (for better resolution) working, you'll need to create a specific keybind.
 - Usage: `img.exe <path to image>` -> `img.exe E:\test.png`
-- To exit just hit enter
+- To exit, press any key
 
 ### Setting up Windows-Terminal
 ![Step 1](doc/1.png)
