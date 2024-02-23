@@ -3,15 +3,14 @@ stdin.setRaw(true, {cbreak: Deno.build.os !== "windows"});
 
 const maxBuffer = new Uint8Array(1024);
 const read = async () => {
-      const size = await stdin.read(maxBuffer);
-      const buffer = maxBuffer.subarray(0, size || 0);
+	const size = await stdin.read(maxBuffer);
+	const buffer = maxBuffer.subarray(0, size || 0).toString();
 
-      for (const byte of buffer) {
-            if (byte === 3) Deno.exit(0);
-            console.log(byte)
-      }
+	if (buffer === "27") Deno.exit(0);
 
-      setTimeout(read, 1000/60);
-}
+	console.log(buffer);
+
+	setTimeout(read, 1000 / 60);
+};
 
 await read();
