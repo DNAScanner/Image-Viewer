@@ -108,7 +108,8 @@ const display = {
 				// Also mention the absolute horizontal position using \x1b[indexG
 				string += `\x1b[${(offsetX + column) * 2}G${rgbBlock({red: pixel[0], green: pixel[1], blue: pixel[2]})}`;
 			}
-			string += "\n";
+
+			if (row < height - 1) string += "\n";
 		}
 
 		return {
@@ -163,13 +164,10 @@ Deno.mkdirSync(folder);
 let done = false;
 let frames = 0;
 (async () => {
-	await new Deno.Command("ffmpeg", {args: ["-i", filename, `${folder}/frame%08d.png`]}).output();
+	await new Deno.Command("ffmpeg", {args: ["-i", filename, `${folder}/frame%08d.png`, "-threads", "1"]}).output();
 	done = true;
 	for (const _frame of Deno.readDirSync(folder)) frames++;
 })();
-
-// Example: frames-1631530730000/frame00000001.png
-// Example: frames-1631530730000/frame00000002.png
 
 await display.init();
 
@@ -181,8 +179,8 @@ const displayDimensions = {
 		width: 0,
 	},
 	update: () => {
-		displayDimensions.height = Math.floor(Deno.consoleSize().rows - 2);
-		displayDimensions.width = Math.floor(Deno.consoleSize().columns / 2 - 5);
+		displayDimensions.height = Math.floor(Deno.consoleSize().rows - 1);
+		displayDimensions.width = Math.floor(Deno.consoleSize().columns / 2 - 1);
 		displayDimensions.old = {
 			height: displayDimensions.height,
 			width: displayDimensions.width,
@@ -196,11 +194,12 @@ let frame = 1;
 
 const player = {
 	isPaused: false,
+	playAfterExitingMenu: true,
 	pause: () => (player.isPaused = true),
 	play: () => (player.isPaused = false),
 	togglePause: () => (player.isPaused = !player.isPaused),
 
-	fpsLimit: 30,
+	fpsLimit: new TextDecoder().decode((await new Deno.Command("ffprobe", {args: ["-v", "error", "-select_streams", "v", "-of", "default=noprint_wrappers=1:nokey=1", "-show_entries", "stream=r_frame_rate", filename]}).output()).stdout).split("/")[0] as unknown as number,
 
 	refreshScreen: false,
 	refreshScreenF: (clear: boolean) => {
@@ -215,7 +214,13 @@ let lastFrameTimestamp = Date.now();
 
 (async () => {
 	while (true) {
-		if (done && frame >= frames) break;
+		if (done && frame >= frames) {
+			const newTitle = "Video finished";
+			if (title.current !== newTitle) title.set(newTitle);
+			
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			continue;
+		}
 		let frameExists = false;
 
 		while (player.isPaused && !player.refreshScreen) await new Promise((resolve) => setTimeout(resolve, 5));
@@ -259,8 +264,10 @@ let lastFrameTimestamp = Date.now();
 				displayImage.string.length >= 256 && addCharacterRenderDuration((Date.now() - startRender) / displayImage.string.length);
 				player.refreshScreen && (player.refreshScreen = false);
 				while (Date.now() < startNextFrame) await new Promise((resolve) => setTimeout(resolve, 1));
-			} catch {
-				title.set("Waiting for frame " + frame + ".".repeat(Math.floor(Date.now() / 500) % 4));
+			} catch (_error) {
+				// title.set("Waiting for frame " + frame + ".".repeat(Math.floor(Date.now() / 500) % 4));
+				title.set(("0".repeat(8) + frame).slice(-8) + ".png" + ".".repeat(Math.floor(Date.now() / 500) % 4));
+				Deno.writeTextFileSync("error.txt", _error + "\n", {append: true});
 				await new Promise((resolve) => setTimeout(resolve, 50));
 				if (done && frame >= frames) break;
 			}
@@ -287,6 +294,7 @@ const read = async () => {
 				helpMenuVisible = false;
 				await zoom.out();
 				player.refreshScreenF(true);
+				player.play();
 				break;
 			}
 
@@ -310,7 +318,7 @@ const read = async () => {
 			// Right arrow
 			if (helpMenuVisible) break;
 
-			frame += 10;
+			frame = Math.min(frame + 10, frames);
 			player.isPaused && player.refreshScreenF(false);
 			break;
 		}
@@ -319,7 +327,7 @@ const read = async () => {
 			// Left arrow
 			if (helpMenuVisible) break;
 
-			frame -= 10;
+			frame = Math.max(frame - 10, 1);
 			player.isPaused && player.refreshScreenF(false);
 			break;
 		}
@@ -338,15 +346,17 @@ const read = async () => {
 			if (!helpMenuVisible) {
 				await zoom.out();
 				player.refreshScreenF(true);
+				player.playAfterExitingMenu && player.play();
 				break;
 			}
 
 			player.isPaused = true;
+			title.set("Help");
 
 			console.clear();
 			await zoom.in();
 
-			const buttonDefinitionMaxWidth = 15;
+			let buttonDefinitionMaxWidth = 0;
 
 			const text = [];
 
@@ -356,9 +366,11 @@ const read = async () => {
 				{key: "Right Arrow", description: "Skip 10 frames forward"},
 				{key: "Left Arrow", description: "Skip 10 frames backward"},
 				{key: "F1", description: "Show / Hide this menu"},
-				{key: "F2", description: "[WIP] Open settings", color: 91},
 				{key: "F5", description: "Refresh screen"},
 			];
+
+			for (const key of keys) buttonDefinitionMaxWidth = Math.max(buttonDefinitionMaxWidth, key.key.length);
+			buttonDefinitionMaxWidth += 2;
 
 			for (const key of keys) {
 				text.push((key.color ? `\x1b[${key.color}m` : "") + centeredText({text: key.key, width: buttonDefinitionMaxWidth, spacesAfter: true}) + ": " + key.description + (key.color ? `\x1b[0m` : "") + "\n");
