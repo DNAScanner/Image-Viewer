@@ -1,7 +1,7 @@
 import {createCanvas, loadImage} from "https://deno.land/x/canvas@v1.4.1/mod.ts";
 
 const filename = Deno.args[0] || "";
-const deleteFrames = false;
+const deleteFrames = true;
 const characterRenderDurationProcessingLimit = 10;
 
 if (!filename) {
@@ -146,7 +146,16 @@ const exit = async () => {
 	await display.end();
 	stdin.setRaw(false);
 	stdin.close();
+
+	// Kill ffmpeg
+	try {
+		ffmpegProcess?.kill("SIGKILL");
+	} catch {
+		null;
+	}
+
 	deleteFrames && Deno.removeSync(folder, {recursive: true});
+	// console.log(characterRenderDurations.reduce((a, b) => a + b, 0) / characterRenderDurations.length);
 	Deno.exit(0);
 };
 
@@ -160,11 +169,14 @@ const folder = `frames-${Date.now()}`;
 Deno.mkdirSync(folder);
 
 // Get FPS and duration of the video: ffprobe -i filename -print_format json -show_streams -count_frames
-
+let ffmpegProcess: Deno.ChildProcess | undefined;
 let done = false;
 let frames = 0;
 (async () => {
-	await new Deno.Command("ffmpeg", {args: ["-i", filename, `${folder}/frame%08d.png`, "-threads", "1"]}).output();
+	ffmpegProcess = new Deno.Command("ffmpeg", {args: ["-i", filename, `${folder}/frame%08d.png`], stdout: "null", stderr: "null", stdin: "null"}).spawn();
+	// Wait until ffmpeg is done
+	await ffmpegProcess.status
+
 	done = true;
 	for (const _frame of Deno.readDirSync(folder)) frames++;
 })();
@@ -200,6 +212,7 @@ const player = {
 	togglePause: () => (player.isPaused = !player.isPaused),
 
 	fpsLimit: new TextDecoder().decode((await new Deno.Command("ffprobe", {args: ["-v", "error", "-select_streams", "v", "-of", "default=noprint_wrappers=1:nokey=1", "-show_entries", "stream=r_frame_rate", filename]}).output()).stdout).split("/")[0] as unknown as number,
+	// fpsLimit: 600,
 
 	refreshScreen: false,
 	refreshScreenF: (clear: boolean) => {
@@ -217,7 +230,7 @@ let lastFrameTimestamp = Date.now();
 		if (done && frame >= frames) {
 			const newTitle = "Video finished";
 			if (title.current !== newTitle) title.set(newTitle);
-			
+
 			await new Promise((resolve) => setTimeout(resolve, 5));
 			continue;
 		}
