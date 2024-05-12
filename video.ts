@@ -51,25 +51,25 @@ const darkenColor = ({red, green, blue, amount}: RGB & {amount: number}) => ({re
 const zoom = {
 	out: async () => {
 		// powershell -Command 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 11; $i++) { [System.Windows.Forms.SendKeys]::SendWait(\"^-\") }'
-		await new Deno.Command("powershell", {args: ["-Command", 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 8; $i++) { [System.Windows.Forms.SendKeys]::SendWait("^-") }']}).output();
+		Deno.build.os === "windows" ?  await new Deno.Command("powershell", {args: ["-Command", 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 8; $i++) { [System.Windows.Forms.SendKeys]::SendWait("^-") }']}).output() : null;
 	},
 
 	in: async () => {
 		// powershell -Command 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 11; $i++) { [System.Windows.Forms.SendKeys]::SendWait(\"^{.}\") }' (The dot is a workaround)
-		await new Deno.Command("powershell", {args: ["-Command", 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 8; $i++) { [System.Windows.Forms.SendKeys]::SendWait("^{.}") }']}).output();
+		Deno.build.os === "windows" ?  await new Deno.Command("powershell", {args: ["-Command", 'Add-Type -AssemblyName System.Windows.Forms; for ($i = 0; $i -lt 8; $i++) { [System.Windows.Forms.SendKeys]::SendWait("^{.}") }']}).output() : null;
 	},
 };
 
 const display = {
 	init: async () => {
-		console.log("\x1b[?1049h\x1b[1G\x1b\x1b[1d");
+		console.log("\x1b[?1049h\x1b[1G\x1b\x1b[1d\x1b[?25l");
 		await zoom.out();
 	},
 	end: async () => {
-		console.log("\x1b[?1049l\x1b[1F");
+		console.log("\x1b[?1049l\x1b[1F\x1b[?25h");
 		await zoom.in();
 	},
-	show: ({imageData, lastImage, offsetX, width, height, frame}: DisplayImageParams) => {
+	render: ({imageData, lastImage, offsetX, width, height, frame}: DisplayImageParams) => {
 		// Darken the second last row to 0.5
 		for (let column = 0; column < width; column++) {
 			const index = (height - 2) * width * 4 + column * 4;
@@ -105,16 +105,14 @@ const display = {
 
 				const index = (row * width + column) * 4;
 				const pixel = [imageData[index], imageData[index + 1], imageData[index + 2]];
-				// Also mention the absolute horizontal position using \x1b[indexG
-				string += `\x1b[${(offsetX + column) * 2}G${rgbBlock({red: pixel[0], green: pixel[1], blue: pixel[2]})}`;
+				// Also mention the absolute horizontal and vertical position using \x1b[indexG and \x1b[indexd
+				string += `\x1b[${(offsetX + column) * 2}G\x1b[${row + 1}d${rgbBlock({red: pixel[0], green: pixel[1], blue: pixel[2]})}`;
 			}
-
-			if (row < height - 1) string += "\n";
 		}
 
 		return {
 			string,
-			show: () => (console.log(string), string),
+			show: () => console.log(string),
 			estimatedTime: string.length * (characterRenderDurations.slice(0 - characterRenderDurationProcessingLimit).reduce((a, b) => a + b, 0) / characterRenderDurations.slice(0 - characterRenderDurationProcessingLimit).length),
 		};
 	},
@@ -175,7 +173,7 @@ let frames = 0;
 (async () => {
 	ffmpegProcess = new Deno.Command("ffmpeg", {args: ["-i", filename, `${folder}/frame%08d.png`], stdout: "null", stderr: "null", stdin: "null"}).spawn();
 	// Wait until ffmpeg is done
-	await ffmpegProcess.status
+	await ffmpegProcess.status;
 
 	done = true;
 	for (const _frame of Deno.readDirSync(folder)) frames++;
@@ -261,7 +259,7 @@ let lastFrameTimestamp = Date.now();
 				const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 				const data = imageData.data;
 
-				const displayImage = display.show({imageData: data, lastImage: !player.refreshScreen ? lastFrameData : new Uint8ClampedArray(0), offsetX, width: canvas.width, height: canvas.height, frame: {current: frame, total: frames}});
+				const displayImage = display.render({imageData: data, lastImage: !player.refreshScreen ? lastFrameData : new Uint8ClampedArray(0), offsetX, width: canvas.width, height: canvas.height, frame: {current: frame, total: frames}});
 				const startRender = Date.now();
 				const startNextFrame = startRender + Math.min(100, Math.max(1000 / player.fpsLimit, displayImage.estimatedTime) / 1.25);
 				displayImage.show();
